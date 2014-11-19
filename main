@@ -1,0 +1,64 @@
+import cv2
+import subprocess
+print "OpenCV Version:"
+print cv2.__version__
+
+# Directories, Files and Constants
+MAXIMG = 9999
+IMGDIR = '/home/henry/Documents/images/images_day/'
+CONFIGFILE = 'config.txt'
+PISTILL = 'raspistill -n '
+DAYSETTINGS = '-ex auto -awb auto -mm average -drc high -co 30 '
+NIGHTSETTINGS = '-drc high --colfx 128:128 -ISO 800 -ss 2500000 '
+TIMEOUT = '-t 30000 '
+OUTDIR = '-o ' + IMGDIR
+NDTHRES = 130
+DNTHRES = 40
+
+# Load configuration
+import config
+config.load(CONFIGFILE)
+
+
+######################################## Main Loop ########################################
+
+while True:
+    # Get next image number
+    config.image_number += 1
+    if config.image_number > MAXIMG:
+        config.image_number = 0
+    print 'Current image = ' + str(config.image_number)
+
+    # Get image name
+    IMGNAME = 'image' + str(config.image_number).zfill(4) + '.jpg'
+    print 'Output Image is: ' + IMGNAME
+
+    # Take Image - Choose day or night mode
+    if config.daytime:
+        # Day mode image call
+        StillCall = PISTILL + DAYSETTINGS + TIMEOUT + OUTDIR + IMGNAME
+    else:
+        # Night mode image call
+        StillCall = PISTILL + NIGHTSETTINGS + TIMEOUT + OUTDIR + IMGNAME
+
+    # Take image
+    print 'Function Call is: \n' + StillCall
+    #subprocess.call(StillCall)
+
+    # Test image for exposure and update daytime
+    #img = cv2.imread(IMGDIR + IMGNAME,1)
+    img = cv2.imread(IMGDIR + 'test00000058.jpg',0)
+    brightness = cv2.mean(img)[0]
+    print 'Image Brightness is: ' + str(brightness)
+
+    # If Daytime and gets too dark change to Night Mode
+    if config.daytime and brightness < DNTHRES:
+        config.daytime = 0
+    # If Nightime and gets too light change to Day Mode
+    elif not(config.daytime) and brightness > NDTHRES:
+        config.daytime = 1
+
+    # Write config file
+    config.write(CONFIGFILE)
+
+    # Do image processing
