@@ -1,16 +1,28 @@
 import cv2
-import subprocess
+import os
+import numpy as np
+from matplotlib import pyplot as plt
 print "OpenCV Version:"
 print cv2.__version__
+import process
+
+# Get OS
+arch = os.uname()[4][:3]
+print 'OS is: ' + arch
 
 # Directories, Files and Constants
 MAXIMG = 9999
-IMGDIR = '/home/henry/Documents/images/images_day/'
+
+if arch == 'arm':
+    IMGDIR = '/mnt/images/'
+elif arch == 'x86':
+    IMGDIR = '/home/henry/Documents/images/test/images/'
+
 CONFIGFILE = 'config.txt'
 PISTILL = 'raspistill -n '
 DAYSETTINGS = '-ex auto -awb auto -mm average -drc high -co 30 '
 NIGHTSETTINGS = '-drc high --colfx 128:128 -ISO 800 -ss 2500000 '
-TIMEOUT = '-t 30000 '
+TIMEOUT = '-t 10000 '
 OUTDIR = '-o ' + IMGDIR
 NDTHRES = 130
 DNTHRES = 40
@@ -18,7 +30,6 @@ DNTHRES = 40
 # Load configuration
 import config
 config.load(CONFIGFILE)
-
 
 ######################################## Main Loop ########################################
 
@@ -43,13 +54,14 @@ while True:
 
     # Take image
     print 'Function Call is: \n' + StillCall
-    #subprocess.call(StillCall)
+    if arch == 'arm':
+        os.system(StillCall)
 
     # Test image for exposure and update daytime
     #img = cv2.imread(IMGDIR + IMGNAME,1)
-    img = cv2.imread(IMGDIR + 'test00000058.jpg',0)
+    img = cv2.imread(IMGDIR + 'image4566.jpg',0)
     brightness = cv2.mean(img)[0]
-    print 'Image Brightness is: ' + str(brightness)
+    print 'Image Brightness is: ' + str(int(brightness))
 
     # If Daytime and gets too dark change to Night Mode
     if config.daytime and brightness < DNTHRES:
@@ -62,3 +74,66 @@ while True:
     config.write(CONFIGFILE)
 
     # Do image processing
+
+    img2 = cv2.imread(IMGDIR + 'image4560.jpg',0)
+
+    dft1 = cv2.dft(np.float32(img),flags = cv2.DFT_COMPLEX_OUTPUT)
+    dft2 = cv2.dft(np.float32(img2),flags = cv2.DFT_COMPLEX_OUTPUT)
+
+    count = 0
+    mean_phase = np.zeros([1944, 2592])
+    for x in range(4353, 4560):
+        temp_img = cv2.imread(IMGDIR + 'image' + str(x) + '.jpg',0)
+        temp_dft = cv2.dft(np.float32(temp_img),flags = cv2.DFT_COMPLEX_OUTPUT)
+        temp_phase = cv2.phase(temp_dft[:,:,0],temp_dft[:,:,1])
+        mean_phase = (mean_phase * count + temp_phase) / (count + 1)
+        count += 1
+
+    #dft_mag = cv2.magnitude(dft[:,:,0],dft[:,:,1])
+    dft_phase1 = cv2.phase(dft1[:,:,0],dft1[:,:,1])
+    dft_phase2 = cv2.phase(dft2[:,:,0],dft2[:,:,1])
+
+    phase_diff2 = abs(mean_phase-dft_phase2)
+    phase_diff1 = abs(mean_phase-dft_phase1)
+
+    #dft_shift = np.fft.fftshift(dft)
+
+    threshold = 500
+    ratio = 1944.0/2592.0
+    scalar_phase1 = 0
+    phase_count1 = 0
+    scalar_phase2 = 0
+    phase_count2 = 0
+    for x in range(0, threshold):
+        y_end = ratio*(threshold - x)
+        for y in range(0, int(y_end)):
+            #print phase_diff1[x,y]
+            scalar_phase1 = (scalar_phase1 * phase_count1 + phase_diff1[y,x]) / (phase_count1 + 1)
+            phase_count1 += 1
+            scalar_phase1 = (scalar_phase1 * phase_count1 + phase_diff1[1943-y,x]) / (phase_count1 + 1)
+            phase_count1 += 1
+            scalar_phase1 = (scalar_phase1 * phase_count1 + phase_diff1[y,2591-x]) / (phase_count1 + 1)
+            phase_count1 += 1
+            scalar_phase1 = (scalar_phase1 * phase_count1 + phase_diff1[1943-y,2591-x]) / (phase_count1 + 1)
+            phase_count1 += 1
+            scalar_phase2 = (scalar_phase2 * phase_count2 + phase_diff2[y,x]) / (phase_count2 + 1)
+            phase_count2 += 1
+
+    print 'Scalar Phase 1 is: ' + str(scalar_phase1)
+    print 'Scalar Phase 2 is: ' + str(scalar_phase2)
+
+    #magnitude_spectrum = 20*np.log(cv2.magnitude(dft_shift[:,:,0],dft_shift[:,:,1]))
+
+    plt.subplot(221),plt.imshow(img, cmap = 'gray')
+    plt.title('Input Image 1'), plt.xticks([]), plt.yticks([])
+    plt.subplot(222),plt.imshow(phase_diff1, cmap = 'gray')
+    plt.title('Phase Difference 1'), plt.xticks([]), plt.yticks([])
+    plt.subplot(223),plt.imshow(img2, cmap = 'gray')
+    plt.title('Input Image 2'), plt.xticks([]), plt.yticks([])
+    plt.subplot(224),plt.imshow(phase_diff2, cmap = 'gray')
+    plt.title('Phase Difference 2'), plt.xticks([]), plt.yticks([])
+    plt.show()
+
+    # Don't loop for testing
+    if arch == 'x86':
+        break
